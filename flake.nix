@@ -20,7 +20,7 @@
       # release.json is written by the release workflow (.github/workflows/release.yml).
       # It holds the version plus the URL and hash of each prebuilt binary.
       release = builtins.fromJSON (builtins.readFile ./release.json);
-      cargoVersion = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
+      cargoVersion = (fromTOML (builtins.readFile ./Cargo.toml)).package.version;
 
       metaFor = pkgs: {
         description = "Show NixOS channel status in the terminal";
