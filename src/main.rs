@@ -745,7 +745,7 @@ fn render_table(style: Style, now: f64, channels: &[Channel], used: &HashSet<Str
         out.push(format!(
             "{marker}{name}{}{:<14}{status}",
             style.paint(c.freshness(now).color(), &format!("{updated:<AGE_WIDTH$}")),
-            short(&c.revision, 10),
+            short(&c.revision, 12),
         ));
     }
     out.join("\n")
