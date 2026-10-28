@@ -101,6 +101,7 @@ struct LocalInfo {
     candidates: Vec<Candidate>,
     revision: Option<String>,
     version: Option<String>,
+    build_number: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -505,6 +506,28 @@ fn registry_candidates(output: &str) -> Vec<Candidate> {
         .collect()
 }
 
+/// Extract the numeric build component from versions such as
+/// `25.05.812436.abc (Warbler)`.
+fn build_number_from_version(version: &str) -> Option<String> {
+    let head = version.split_whitespace().next()?;
+    let mut parts = head.split('.');
+    let year = parts.next()?;
+    let month = parts.next()?;
+    let build = parts.next()?;
+
+    if year.len() != 2
+        || !year.bytes().all(|b| b.is_ascii_digit())
+        || month.len() != 2
+        || !month.bytes().all(|b| b.is_ascii_digit())
+        || build.is_empty()
+        || !build.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+
+    Some(build.to_owned())
+}
+
 fn local_info(opts: &Options) -> LocalInfo {
     let mut candidates = Vec::new();
 
@@ -549,10 +572,14 @@ fn local_info(opts: &Options) -> LocalInfo {
             .map(str::to_owned)
     };
 
+    let version = field("nixosVersion");
+    let build_number = version.as_deref().and_then(build_number_from_version);
+
     LocalInfo {
         candidates,
         revision: field("nixpkgsRevision"),
-        version: field("nixosVersion"),
+        version,
+        build_number,
     }
 }
 
@@ -715,6 +742,9 @@ fn render_summary(
     if let Some(v) = local.version.as_deref() {
         lines.push(kv(style, "NixOS version", v, "1"));
     }
+    if let Some(build) = local.build_number.as_deref() {
+        lines.push(kv(style, "Build number", build, "1"));
+    }
     lines.push(kv(style, "status-nixos", env!("CARGO_PKG_VERSION"), "1"));
     box_lines(&lines)
 }
@@ -781,6 +811,7 @@ fn render_json(now: f64, channels: &[Channel], detected: &[Detected], local: &Lo
         .collect();
     serde_json::to_string_pretty(&json!({
         "nixos_version": local.version,
+        "nixos_build_number": local.build_number,
         "system_revision": local.revision,
         "selected": selected,
         "channels": items,
@@ -900,6 +931,16 @@ mod tests {
             Some("nixos-unstable")
         );
         assert_eq!(channel_from_url("https://example.com/x"), None);
+    }
+
+    #[test]
+    fn extracts_build_number_from_nixos_version() {
+        assert_eq!(
+            build_number_from_version("25.05.812436.abc (Warbler)").as_deref(),
+            Some("812436")
+        );
+        assert_eq!(build_number_from_version("26.05pre123.abc (Yarara)"), None);
+        assert_eq!(build_number_from_version("not-a-version"), None);
     }
 
     #[test]
