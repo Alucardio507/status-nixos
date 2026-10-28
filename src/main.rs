@@ -101,7 +101,7 @@ struct LocalInfo {
     candidates: Vec<Candidate>,
     revision: Option<String>,
     version: Option<String>,
-    build_number: Option<String>,
+    generation: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -506,26 +506,14 @@ fn registry_candidates(output: &str) -> Vec<Candidate> {
         .collect()
 }
 
-/// Extract the numeric build component from versions such as
-/// `25.05.812436.abc (Warbler)`.
-fn build_number_from_version(version: &str) -> Option<String> {
-    let head = version.split_whitespace().next()?;
-    let mut parts = head.split('.');
-    let year = parts.next()?;
-    let month = parts.next()?;
-    let build = parts.next()?;
-
-    if year.len() != 2
-        || !year.bytes().all(|b| b.is_ascii_digit())
-        || month.len() != 2
-        || !month.bytes().all(|b| b.is_ascii_digit())
-        || build.is_empty()
-        || !build.bytes().all(|b| b.is_ascii_digit())
-    {
-        return None;
-    }
-
-    Some(build.to_owned())
+/// Read the active NixOS system generation from the system profile link
+/// (for example, `system-42-link` -> generation `42`).
+fn current_system_generation() -> Option<String> {
+    let target = std::fs::read_link("/nix/var/nix/profiles/system").ok()?;
+    let name = target.file_name()?.to_str()?;
+    let generation = name.strip_prefix("system-")?.strip_suffix("-link")?;
+    (!generation.is_empty() && generation.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| generation.to_owned())
 }
 
 fn local_info(opts: &Options) -> LocalInfo {
@@ -573,13 +561,13 @@ fn local_info(opts: &Options) -> LocalInfo {
     };
 
     let version = field("nixosVersion");
-    let build_number = version.as_deref().and_then(build_number_from_version);
+    let generation = version.as_ref().and_then(|_| current_system_generation());
 
     LocalInfo {
         candidates,
         revision: field("nixpkgsRevision"),
         version,
-        build_number,
+        generation,
     }
 }
 
@@ -742,8 +730,8 @@ fn render_summary(
     if let Some(v) = local.version.as_deref() {
         lines.push(kv(style, "NixOS version", v, "1"));
     }
-    if let Some(build) = local.build_number.as_deref() {
-        lines.push(kv(style, "Build number", build, "1"));
+    if let Some(generation) = local.generation.as_deref() {
+        lines.push(kv(style, "System generation", generation, "1"));
     }
     lines.push(kv(style, "status-nixos", env!("CARGO_PKG_VERSION"), "1"));
     box_lines(&lines)
@@ -811,7 +799,7 @@ fn render_json(now: f64, channels: &[Channel], detected: &[Detected], local: &Lo
         .collect();
     serde_json::to_string_pretty(&json!({
         "nixos_version": local.version,
-        "nixos_build_number": local.build_number,
+        "nixos_generation": local.generation,
         "system_revision": local.revision,
         "selected": selected,
         "channels": items,
@@ -934,13 +922,14 @@ mod tests {
     }
 
     #[test]
-    fn extracts_build_number_from_nixos_version() {
-        assert_eq!(
-            build_number_from_version("25.05.812436.abc (Warbler)").as_deref(),
-            Some("812436")
-        );
-        assert_eq!(build_number_from_version("26.05pre123.abc (Yarara)"), None);
-        assert_eq!(build_number_from_version("not-a-version"), None);
+    fn parses_system_generation_link_name() {
+        let parse = |name: &str| {
+            let name = name.strip_prefix("system-")?.strip_suffix("-link")?;
+            (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit())).then(|| name.to_owned())
+        };
+        assert_eq!(parse("system-42-link").as_deref(), Some("42"));
+        assert_eq!(parse("system-current-link"), None);
+        assert_eq!(parse("system-42"), None);
     }
 
     #[test]
