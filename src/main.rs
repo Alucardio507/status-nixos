@@ -731,7 +731,7 @@ fn render_summary(
         lines.push(kv(style, "NixOS version", v, "1"));
     }
     if let Some(generation) = local.generation.as_deref() {
-        lines.push(kv(style, "System generation ", generation, "1"));
+        lines.push(kv(style, "Generation", generation, "1"));
     }
     lines.push(kv(style, "status-nixos", env!("CARGO_PKG_VERSION"), "1"));
     box_lines(&lines)
